@@ -1,3 +1,20 @@
+/**
+ * @file main.cpp
+ * @brief Main control program for Duplo Lego Car with ESP8266
+ * 
+ * This program controls a Duplo Lego Car using an ESP8266 microcontroller.
+ * It integrates various sensors (laser) and control mechanisms (nunchuck, MQTT)
+ * to provide remote and local control of the vehicle.
+ * 
+ * Features:
+ * - WiFi connectivity with OTA updates
+ * - MQTT communication for remote control
+ * - Nunchuck controller for local control
+ * - Laser distance sensor
+ * - Battery monitoring
+ * - I2C device management
+ */
+
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ArduinoOTA.h>
@@ -7,81 +24,110 @@
 #include "credentials.h"
 #include "common.h"
 #include "mqttClient.h"
-#include "compass.h"
 #include "laser.h"
 #include "motors.h"
 #include "batteries.h"
 #include "nunchuck.h"
 
-void i2c_scanner();
+// Global object declarations
+PubSubClient MQTTClient;    ///< MQTT client for network communication
+MQTT mqtt;                  ///< Custom MQTT handler
+Battery battery;            ///< Battery monitoring system
+Motors motors;              ///< Motor control system
+Nunchuck nunchuck;          ///< Nunchuck controller interface
+Laser laser;                ///< Laser distance sensor
 
-PubSubClient MQTTClient;
-MQTT mqtt;
-Battery battery;
-Motors motors;
-Nunchuck nunchuck;
-Laser laser;
-Compass compass;
-
+/**
+ * @brief Initializes all system components
+ * 
+ * This function sets up:
+ * - Serial communication for debugging
+ * - I2C bus for sensor communication
+ * - WiFi and OTA update capabilities
+ * - MQTT client for network communication
+ * - All sensors and control systems
+ * 
+ * @note The system will restart if no I2C devices are found
+ */
 void setup()
 {
+  // Initialize serial communication for debugging
   Serial.begin(115200);
-  Serial.println("Starting");
+  Serial.println("Starting Duplo Lego Car System");
 
+  // Initialize I2C bus for sensor communication
   Wire.begin();
 
+  // Setup network connectivity
   setupWifi();
   setupOTA();
 
-  //start MQTT
+  // Initialize MQTT client for remote control
   mqtt.Begin();
 
+  // Scan for I2C devices and verify connectivity
   i2c_scanner();
 
-  //start laser beam
-  laser.Begin();
-
-  //start compass
-  compass.Begin();
-
-  //get battery reading
-  battery.Begin();
-
-  //get nunchuck ready
-  nunchuck.nunchuck_init();
-
-  //get motors ready
-  motors.Begin();
+  // Initialize all sensors and control systems
+  laser.Begin();            // Laser distance sensor
+  battery.Begin();          // Battery monitoring
+  nunchuck.nunchuck_init(); // Nunchuck controller
+  motors.Begin();           // Motor control system
 }
 
+/**
+ * @brief Main control loop
+ * 
+ * This function:
+ * - Maintains network connectivity
+ * - Processes remote (MQTT) and local (nunchuck) control inputs
+ * - Reads sensor values
+ * - Controls motor movement based on inputs and sensor data
+ * 
+ * @note The loop runs with a 50ms delay to prevent overwhelming the system
+ */
 void loop()
 {
-  //make code smarter if it's not on the network it should still work
+  // Maintain network connectivity if connected
   if (WiFi.isConnected() == true)
   {
     MDNS.update();
     ArduinoOTA.handle();
   }
 
+  // Get motor control values from MQTT
   MotorXY motorXY;
   motorXY = mqtt.Loop();
 
+  // Fallback to nunchuck control if no MQTT input
   if (motorXY.fromMQTT == false)
   {
     motorXY = nunchuck.Loop();
   }
 
-  //go and get laser and compass values
-  int laserRangeMilliMeter = laser.Loop();
-  int medianCompassHeading = compass.Loop();
-  int motor_x = motorXY.motor_x;
-  int motor_y = motorXY.motor_y;
+  // Read sensor values
+  int laserRangeMilliMeter = laser.Loop();      // Get distance measurement
+  int motor_x = motorXY.motor_x;                // X-axis motor control
+  int motor_y = motorXY.motor_y;                // Y-axis motor control
 
-  motors.setMapped(motor_x, motor_y, laserRangeMilliMeter); //, medianCompassHeading);
+  // Apply motor control with sensor feedback
+  motors.setMapped(motor_x, motor_y, laserRangeMilliMeter);
 
+  // Prevent system overload
   delay(50);
 }
 
+/**
+ * @brief Scans the I2C bus for connected devices
+ * 
+ * This function:
+ * - Scans all possible I2C addresses (1-127)
+ * - Reports found devices to serial output
+ * - Restarts the system if no devices are found
+ * 
+ * @note Uses yield() to prevent ESP8266 watchdog timer issues
+ * @warning System will restart if no I2C devices are detected
+ */
 void i2c_scanner()
 {
   yield();
@@ -89,7 +135,7 @@ void i2c_scanner()
   byte error, address;
   int nDevices;
 
-  Log("Scanning...");
+  Log("Scanning I2C bus for connected devices...");
 
   nDevices = 0;
   for (address = 1; address < 127; address++)
@@ -98,7 +144,7 @@ void i2c_scanner()
 
     delay(5);
 
-    // The i2c scanner uses the return value of the Write.endTransmisstion to see if a device did acknowledge to the address.
+    // Check if device responds at current address
     Wire.beginTransmission(address);
     error = Wire.endTransmission();
 
@@ -124,16 +170,18 @@ void i2c_scanner()
       Log(String(address));
     }
   }
+
+  // Handle scan results
   if (nDevices == 0)
   {
     Log("No I2C devices found\n");
-
     delay(500);
-
     ESP.restart();
   }
   else
   {
-    Log("Done.\n");
+    Log("I2C scan complete. Found ");
+    Log(String(nDevices));
+    Log(" devices.\n");
   }
 }

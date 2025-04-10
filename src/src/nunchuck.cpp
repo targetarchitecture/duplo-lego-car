@@ -1,3 +1,14 @@
+/**
+ * @file nunchuck.cpp
+ * @brief Nintendo Nunchuck controller implementation for the Duplo Lego Car
+ * 
+ * This file implements the interface for the Nintendo Nunchuck controller.
+ * It handles I2C communication with the controller and processes its inputs
+ * including joystick position, accelerometer data, and button states.
+ * 
+ * Based on Tod E. Kurt's implementation: http://thingm.com/
+ */
+
 #include <Arduino.h>
 #include "nunchuck.h"
 
@@ -6,8 +17,15 @@
    Based on Tod E. Kurt, http://thingm.com/
 */
 
-  uint8_t nunchuck_buf[6];  
+// Global buffer for storing raw controller data
+uint8_t nunchuck_buf[6];
 
+/**
+ * @brief Constructor for the Nunchuck class
+ * 
+ * Initializes the Nunchuck controller interface.
+ * Note: Initialization is handled separately by nunchuck_init()
+ */
 Nunchuck::Nunchuck() 
 {
   //_MQTTClient = MQTTClient;
@@ -17,230 +35,224 @@ Nunchuck::Nunchuck()
   // Log("Wii Nunchuck ready\n");
 }
 
+/**
+ * @brief Process controller inputs and return motor control values
+ * @return MotorXY structure containing motor control values
+ * 
+ * This function:
+ * 1. Reads all controller inputs
+ * 2. Maps joystick values to motor control ranges
+ * 3. Returns control values for the motor system
+ */
 MotorXY Nunchuck::Loop()
 {
+  // Read raw controller data
   nunchuck_get_data();
 
-  accx = nunchuck_accelx(); // ranges from approx 70 - 182
-  accy = nunchuck_accely(); // ranges from approx 65 - 173
-  zbut = nunchuck_zbutton();
-  cbut = nunchuck_cbutton();
-  joyx = nunchuck_joyx();
-  joyy = nunchuck_joyy();
+  // Process all controller inputs
+  accx = nunchuck_accelx();  // X-axis accelerometer (70-182)
+  accy = nunchuck_accely();  // Y-axis accelerometer (65-173)
+  zbut = nunchuck_zbutton(); // Z button state
+  cbut = nunchuck_cbutton(); // C button state
+  joyx = nunchuck_joyx();    // X-axis joystick
+  joyy = nunchuck_joyy();    // Y-axis joystick
 
-  //Log("accx: "); Log((byte)accx, DEC);
-  //Log("\taccy: "); Log((byte)accy, DEC);
-  //Log("\tzbut: "); Log((byte)zbut, DEC);
-  //Log("\tcbut: "); Log((byte)cbut, DEC);
-  //Log("\tjoyx: "); Log((byte)joyx, DEC);
-  //Log("\tjoyy: "); Log((byte)joyy, DEC);
-
-  // motor_x = joyx;
-  // motor_y = joyy;
-
-  //setMotorsNunChuck(joyx, joyy);
-
+  // Map joystick values to motor control range (-1 to 1)
   int motor_x = map(joyx, 0, 255, -1, 1);
   int motor_y = map(joyy, 0, 255, -1, 1);
 
+  // Create and return motor control structure
   MotorXY motorXY;
   motorXY.motor_x = motor_x;
   motorXY.motor_y = motor_y;
   motorXY.fromMQTT = false;
 
-  // Log("joyx: " +  joyx);
-  // Log("joyy: " + joyy);
-
-  // Log("mapx: " +  motor_x);
-  // Log("mapy: "+ motor_y);
-
   return motorXY;
 }
 
-
-/*
- * Nunchuck functions  -- Talk to a Wii Nunchuck
- *
- * This library is from the Bionic Arduino course : 
- *                          http://todbot.com/blog/bionicarduino/
- *
- * 2007-11 Tod E. Kurt, http://todbot.com/blog/
- *
- * The Wii Nunchuck reading code originally from Windmeadow Labs
- *   http://www.windmeadow.com/node/42
+/**
+ * @brief Initialize the Nunchuck controller
+ * 
+ * This function:
+ * 1. Sets up I2C communication with the controller
+ * 2. Sends initialization sequence
+ * 3. Configures the controller for operation
  */
-
-
-
-
-// initialize the I2C system, join the I2C bus,
-// and tell the nunchuck we're talking to it
 void Nunchuck::nunchuck_init()
 {
   Log("Nunchuck initialise");
 
-    //Wire.begin();                 // join i2c bus as master
-    Wire.beginTransmission(0x52); // transmit to device 0x52
+  // Send initialization sequence to controller
+  Wire.beginTransmission(0x52);  // Nunchuck I2C address
 #if (ARDUINO >= 100)
-    Wire.write((uint8_t)0x40); // sends memory address
-    Wire.write((uint8_t)0x00); // sends sent a zero.
+  Wire.write((uint8_t)0x40);     // Memory address
+  Wire.write((uint8_t)0x00);     // Initialization value
 #else
-    Wire.send((uint8_t)0x40); // sends memory address
-    Wire.send((uint8_t)0x00); // sends sent a zero.
+  Wire.send((uint8_t)0x40);      // Memory address
+  Wire.send((uint8_t)0x00);      // Initialization value
 #endif
-    Wire.endTransmission(); // stop transmitting
+  Wire.endTransmission();
 }
 
-// Send a request for data to the nunchuck
-// was "send_zero()"
+/**
+ * @brief Request new data from the controller
+ * 
+ * Sends a request to the Nunchuck controller to prepare
+ * the next set of data for reading.
+ */
 void Nunchuck::nunchuck_send_request()
 {
-    Wire.beginTransmission(0x52); // transmit to device 0x52
+  Wire.beginTransmission(0x52);  // Nunchuck I2C address
 #if (ARDUINO >= 100)
-    Wire.write((uint8_t)0x00); // sends one byte
+  Wire.write((uint8_t)0x00);     // Request data
 #else
-    Wire.send((uint8_t)0x00); // sends one byte
+  Wire.send((uint8_t)0x00);      // Request data
 #endif
-    Wire.endTransmission(); // stop transmitting
+  Wire.endTransmission();
 }
 
-// Encode data to format that most wiimote drivers except
-// only needed if you use one of the regular wiimote drivers
+/**
+ * @brief Decode a byte from the controller
+ * @param x The byte to decode
+ * @return The decoded byte value
+ * 
+ * The Nunchuck uses a simple encoding scheme that needs to be
+ * decoded for proper interpretation of the data.
+ */
 char Nunchuck::nunchuk_decode_byte(char x)
 {
-    x = (x ^ 0x17) + 0x17;
-    return x;
+  x = (x ^ 0x17) + 0x17;
+  return x;
 }
 
-// Receive data back from the nunchuck,
-// returns 1 on successful read. returns 0 on failure
+/**
+ * @brief Read and decode controller data
+ * @return 1 if successful, 0 if failed
+ * 
+ * This function:
+ * 1. Requests 6 bytes of data from the controller
+ * 2. Decodes each byte
+ * 3. Stores the data in the global buffer
+ * 4. Requests the next data set
+ */
 int Nunchuck::nunchuck_get_data()
 {
-    int cnt = 0;
-    Wire.requestFrom(0x52, 6); // request data from nunchuck
-    while (Wire.available())
-    {
-        // receive byte as an integer
+  int cnt = 0;
+  Wire.requestFrom(0x52, 6);  // Request 6 bytes from controller
+  
+  while (Wire.available())
+  {
+    // Receive and decode each byte
 #if (ARDUINO >= 100)
-        nunchuck_buf[cnt] = nunchuk_decode_byte(Wire.read());
+    nunchuck_buf[cnt] = nunchuk_decode_byte(Wire.read());
 #else
-        nunchuck_buf[cnt] = nunchuk_decode_byte(Wire.receive());
+    nunchuck_buf[cnt] = nunchuk_decode_byte(Wire.receive());
 #endif
-        cnt++;
-    }
-    nunchuck_send_request(); // send request for next data payload
-    // If we recieved the 6 bytes, then go print them
-    if (cnt >= 5)
-    {
-        return 1; // success
-    }
-    return 0; //failure
+    cnt++;
+  }
+  
+  nunchuck_send_request();  // Request next data set
+  
+  return (cnt >= 5) ? 1 : 0;  // Return success if we got enough bytes
 }
 
-// Print the input data we have recieved
-// accel data is 10 bits long
-// so we read 8 bits, then we have to add
-// on the last 2 bits.  That is why I
-// multiply them by 2 * 2
+/**
+ * @brief Print controller data for debugging
+ * 
+ * This function processes and prints all controller inputs:
+ * - Joystick X and Y positions
+ * - Accelerometer X, Y, and Z values
+ * - Z and C button states
+ */
 void Nunchuck::nunchuck_print_data()
 {
-    int i = 0;
-    int joy_x_axis = nunchuck_buf[0];
-    int joy_y_axis = nunchuck_buf[1];
-    int accel_x_axis = nunchuck_buf[2]; // * 2 * 2;
-    int accel_y_axis = nunchuck_buf[3]; // * 2 * 2;
-    int accel_z_axis = nunchuck_buf[4]; // * 2 * 2;
+  int i = 0;
+  int joy_x_axis = nunchuck_buf[0];
+  int joy_y_axis = nunchuck_buf[1];
+  int accel_x_axis = nunchuck_buf[2];
+  int accel_y_axis = nunchuck_buf[3];
+  int accel_z_axis = nunchuck_buf[4];
 
-    int z_button = 0;
-    int c_button = 0;
+  int z_button = 0;
+  int c_button = 0;
 
-    // byte nunchuck_buf[5] contains bits for z and c buttons
-    // it also contains the least significant bits for the accelerometer data
-    // so we have to check each bit of byte outbuf[5]
-    if ((nunchuck_buf[5] >> 0) & 1)
-        z_button = 1;
-    if ((nunchuck_buf[5] >> 1) & 1)
-        c_button = 1;
+  // Process button states and accelerometer LSBs from byte 5
+  if ((nunchuck_buf[5] >> 0) & 1) z_button = 1;
+  if ((nunchuck_buf[5] >> 1) & 1) c_button = 1;
 
-    if ((nunchuck_buf[5] >> 2) & 1)
-        accel_x_axis += 1;
-    if ((nunchuck_buf[5] >> 3) & 1)
-        accel_x_axis += 2;
+  // Add LSBs to accelerometer values
+  if ((nunchuck_buf[5] >> 2) & 1) accel_x_axis += 1;
+  if ((nunchuck_buf[5] >> 3) & 1) accel_x_axis += 2;
+  if ((nunchuck_buf[5] >> 4) & 1) accel_y_axis += 1;
+  if ((nunchuck_buf[5] >> 5) & 1) accel_y_axis += 2;
+  if ((nunchuck_buf[5] >> 6) & 1) accel_z_axis += 1;
+  if ((nunchuck_buf[5] >> 7) & 1) accel_z_axis += 2;
 
-    if ((nunchuck_buf[5] >> 4) & 1)
-        accel_y_axis += 1;
-    if ((nunchuck_buf[5] >> 5) & 1)
-        accel_y_axis += 2;
-
-    if ((nunchuck_buf[5] >> 6) & 1)
-        accel_z_axis += 1;
-    if ((nunchuck_buf[5] >> 7) & 1)
-        accel_z_axis += 2;
-
-    // Log(i,DEC);
-    // Log("\t");
-
-    // Log("joy:");
-    // Log(joy_x_axis,DEC);
-    // Log(",");
-    // Log(joy_y_axis, DEC);
-    // Log("  \t");
-
-    // Log("acc:");
-    // Log(accel_x_axis, DEC);
-    // Log(",");
-    // Log(accel_y_axis, DEC);
-    // Log(",");
-    // Log(accel_z_axis, DEC);
-    // Log("\t");
-
-    // Log("but:");
-    // Log(z_button, DEC);
-    // Log(",");
-    // Log(c_button, DEC);
-
-    // Log("\r\n");  // newline
-    i++;
+  i++;
 }
 
-// returns zbutton state: 1=pressed, 0=notpressed
+/**
+ * @brief Get Z button state
+ * @return 1 if pressed, 0 if not pressed
+ */
 int Nunchuck::nunchuck_zbutton()
 {
-    return ((nunchuck_buf[5] >> 0) & 1) ? 0 : 1; // voodoo
+  return ((nunchuck_buf[5] >> 0) & 1) ? 0 : 1;
 }
 
-// returns zbutton state: 1=pressed, 0=notpressed
+/**
+ * @brief Get C button state
+ * @return 1 if pressed, 0 if not pressed
+ */
 int Nunchuck::nunchuck_cbutton()
 {
-    return ((nunchuck_buf[5] >> 1) & 1) ? 0 : 1; // voodoo
+  return ((nunchuck_buf[5] >> 1) & 1) ? 0 : 1;
 }
 
-// returns value of x-axis joystick
+/**
+ * @brief Get joystick X position
+ * @return Raw X-axis value (0-255)
+ */
 int Nunchuck::nunchuck_joyx()
 {
-    return nunchuck_buf[0];
+  return nunchuck_buf[0];
 }
 
-// returns value of y-axis joystick
+/**
+ * @brief Get joystick Y position
+ * @return Raw Y-axis value (0-255)
+ */
 int Nunchuck::nunchuck_joyy()
 {
-    return nunchuck_buf[1];
+  return nunchuck_buf[1];
 }
 
-// returns value of x-axis accelerometer
+/**
+ * @brief Get X-axis accelerometer value
+ * @return Raw X-axis accelerometer value
+ * @note This implementation leaves out 2 LSBs of the data
+ */
 int Nunchuck::nunchuck_accelx()
 {
-    return nunchuck_buf[2]; // FIXME: this leaves out 2-bits of the data
+  return nunchuck_buf[2];
 }
 
-// returns value of y-axis accelerometer
+/**
+ * @brief Get Y-axis accelerometer value
+ * @return Raw Y-axis accelerometer value
+ * @note This implementation leaves out 2 LSBs of the data
+ */
 int Nunchuck::nunchuck_accely()
 {
-    return nunchuck_buf[3]; // FIXME: this leaves out 2-bits of the data
+  return nunchuck_buf[3];
 }
 
-// returns value of z-axis accelerometer
+/**
+ * @brief Get Z-axis accelerometer value
+ * @return Raw Z-axis accelerometer value
+ * @note This implementation leaves out 2 LSBs of the data
+ */
 int Nunchuck::nunchuck_accelz()
 {
-    return nunchuck_buf[4]; // FIXME: this leaves out 2-bits of the data
+  return nunchuck_buf[4];
 }
