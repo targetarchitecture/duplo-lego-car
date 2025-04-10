@@ -166,17 +166,17 @@ int Nunchuck::nunchuck_get_data()
  */
 void Nunchuck::nunchuck_print_data()
 {
-  int i = 0;
+  // Read raw controller data
   int joy_x_axis = nunchuck_buf[0];
   int joy_y_axis = nunchuck_buf[1];
   int accel_x_axis = nunchuck_buf[2];
   int accel_y_axis = nunchuck_buf[3];
   int accel_z_axis = nunchuck_buf[4];
 
+  // Process button states and accelerometer LSBs from byte 5
   int z_button = 0;
   int c_button = 0;
 
-  // Process button states and accelerometer LSBs from byte 5
   if ((nunchuck_buf[5] >> 0) & 1) z_button = 1;
   if ((nunchuck_buf[5] >> 1) & 1) c_button = 1;
 
@@ -188,7 +188,23 @@ void Nunchuck::nunchuck_print_data()
   if ((nunchuck_buf[5] >> 6) & 1) accel_z_axis += 1;
   if ((nunchuck_buf[5] >> 7) & 1) accel_z_axis += 2;
 
-  i++;
+  // Print all values for debugging
+  Serial.print("Joystick: X=");
+  Serial.print(joy_x_axis);
+  Serial.print(" Y=");
+  Serial.print(joy_y_axis);
+  
+  Serial.print(" | Accel: X=");
+  Serial.print(accel_x_axis);
+  Serial.print(" Y=");
+  Serial.print(accel_y_axis);
+  Serial.print(" Z=");
+  Serial.print(accel_z_axis);
+  
+  Serial.print(" | Buttons: Z=");
+  Serial.print(z_button);
+  Serial.print(" C=");
+  Serial.println(c_button);
 }
 
 /**

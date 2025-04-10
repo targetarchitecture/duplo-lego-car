@@ -38,6 +38,7 @@ class MQTT
 {
 public:
     MQTT();
+    ~MQTT();
     
     /**
      * @brief Initialize the MQTT client

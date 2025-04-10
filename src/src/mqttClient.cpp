@@ -11,7 +11,6 @@
 
 // MQTT client settings
 const int MQTT_BUFFER_SIZE = 1024;  // Increased buffer size for larger messages
-const int MQTT_KEEPALIVE = 60;      // Keepalive interval in seconds
 const int MQTT_TIMEOUT = 5;         // Connection timeout in seconds
 
 /**
@@ -64,7 +63,6 @@ void MQTT::Begin()
     MQTTClient.setClient(espClient);
     MQTTClient.setServer(MQTT_SERVER, 1883);
     MQTTClient.setBufferSize(MQTT_BUFFER_SIZE);
-    MQTTClient.setKeepAlive(MQTT_KEEPALIVE);
     MQTTClient.setSocketTimeout(MQTT_TIMEOUT);
 
     // Set up callback for incoming messages
@@ -167,14 +165,14 @@ void MQTT::callback(char *topic, byte *payload, unsigned int length)
 
   // Convert payload to string
   String message = "";
-  for (int i = 0; i < length; i++)
+  for (unsigned int i = 0; i < length; i++)
   {
     message += (char)payload[i];
   }
   Serial.println(message);
 
   // Process control messages
-  if (std::string(topic) == std::string(MQTT_TOPIC_SUBSCRIBE))
+  if (String(topic) == String(MQTT_TOPIC_SUBSCRIBE))
   {
     DynamicJsonDocument json(capacity);
     deserializeJson(json, message);

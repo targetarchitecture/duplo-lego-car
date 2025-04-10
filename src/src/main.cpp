@@ -66,7 +66,7 @@ void setup()
   mqtt.Begin();
 
   // Scan for I2C devices and verify connectivity
-  i2c_scanner();
+  //i2c_scanner();
 
   // Initialize all sensors and control systems
   laser.Begin();            // Laser distance sensor
